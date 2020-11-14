@@ -1,9 +1,7 @@
 #!/bin/sh
 
-python3 ./front-end/res.py
+python ./front-end/front.py
 
-python3 ./middle-end/middle_main.py
+python ./middle-end/middle_main.py
 
 python ./back-end/backEnd.py
-
-
