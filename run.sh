@@ -1,7 +1,13 @@
 #!/bin/sh
 
-python ./front-end/front.py
-
-python ./middle-end/middle_main.py
-
-python ./back-end/backEnd.py
+cd ./front-end/
+python front.py
+cd ../middle-end/
+python ./middle.py
+'''
+cd ../back-end/
+python ./back.py
+rm -fr ../front-end/frontOut.txt
+rm -fr ../middle-end/middleOut.txt
+rm -fr ../back-end/backOut.txt
+'''
