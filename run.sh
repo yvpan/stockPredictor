@@ -6,7 +6,7 @@ cd ../middle-end/
 python ./middle.py
 '''
 cd ../back-end/
-python ./back.py
+python ./back.py pred
 rm -fr ../front-end/frontOut.txt
 rm -fr ../middle-end/middleOut.txt
 rm -fr ../back-end/backOut.txt

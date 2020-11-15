@@ -2,14 +2,17 @@ import pandas as pd
 import numpy as np
 import tensorflow as tf
 import re
+import keras
+import sys
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import median_absolute_error as mae
 from sklearn.metrics import mean_squared_error as mse
 from sklearn.metrics import accuracy_score as acc
+from sklearn.metrics import confusion_matrix, classification_report
 import matplotlib.pyplot as plt
 from keras.models import Sequential
 from keras import initializers
-from keras.layers import Dropout, Activation, Embedding, Convolution1D, MaxPooling1D, Input, Dense, Merge, BatchNormalization, Flatten, Reshape, Concatenate, concatenate
+from keras.layers import Dropout, Activation, Embedding, Convolution1D, MaxPooling1D, Input, Dense, BatchNormalization, Flatten, Reshape, Concatenate
 from keras.layers.recurrent import LSTM, GRU
 from keras.callbacks import Callback, ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 from keras.models import Model
@@ -161,7 +164,8 @@ for i in headlinesCleaned:
             else:
                 wordCnt[k] += 1
 embedIdx = {}
-with io.open("./glove.6B.300d.txt", encoding = "utf-8") as f:
+#please download the pre-trained word vectors from: https://nlp.stanford.edu/projects/glove/
+with io.open("/data/user/ypan/bin/glove.6B.300d.txt", encoding = "utf-8") as f:
     for line in f:
         values = line.split(' ')
         word = values[0]
@@ -244,73 +248,70 @@ x_test = np.array(x_test)
 y_train = np.array(y_train)
 y_test = np.array(y_test)
 
-print("Training ...")
+print("Building ...")
 filterLen1 = 3
 filterLen2 = 5
 dropout = 0.1
 learningRate = 0.0001
-weights = initializers.TruncatedNormal(mean = 0.0, stddev = 0.1, seed = 1)
 filterNum = 16
 rnnOutputDim = 128
 hiddenDim = 128
 
 def build_model():
-    model1 = Sequential()
-    model1.add(Embedding(wordNum, embedDim, weights = [embedMatrix], input_length = dailyLenThreshold))
-    model1.add(Dropout(dropout))
-    model1.add(Convolution1D(filters = filterNum, kernel_size = filterLen1, padding = 'same', activation = 'relu'))
-    model1.add(Dropout(dropout))
-    model1.add(LSTM(rnnOutputDim, activation = None, kernel_initializer = weights, dropout = dropout))
-    model2 = Sequential()
-    model2.add(Embedding(wordNum, embedDim, weights = [embedMatrix], input_length = dailyLenThreshold))
-    model2.add(Dropout(dropout))
-    model2.add(Convolution1D(filters = filterNum, kernel_size = filterLen2, padding = 'same', activation = 'relu'))
-    model2.add(Dropout(dropout))
-    model2.add(LSTM(rnnOutputDim, activation = None, kernel_initializer = weights, dropout = dropout))
     model = Sequential()
-    model.add(Merge([model1, model2], mode = 'concat'))
-    model.add(Dense(hiddenDim, kernel_initializer = weights))
+    model.add(Embedding(wordNum, embedDim, weights = [embedMatrix], input_length = dailyLenThreshold))
     model.add(Dropout(dropout))
-    model.add(Dense(1, kernel_initializer = weights, activation = "sigmoid"))
-    model.compile(loss = "binary_crossentropy", optimizer = Adam(lr = learningRate), metrics = ['accuracy'])
+    model.add(Convolution1D(filters = filterNum, kernel_size = filterLen2, padding = 'same', activation = 'relu'))
+    model.add(Dropout(dropout))
+    model.add(LSTM(rnnOutputDim, activation = None, kernel_initializer = initializers.TruncatedNormal(mean = 0.0, stddev = 0.1, seed = 1), dropout = dropout))
+    model.add(Dense(hiddenDim, kernel_initializer = initializers.TruncatedNormal(mean = 0.0, stddev = 0.1, seed = 1)))
+    model.add(Dropout(dropout))
+    model.add(Dense(2, kernel_initializer = initializers.TruncatedNormal(mean = 0.0, stddev = 0.1, seed = 1), activation = "softmax"))
+    model.compile(loss = "sparse_categorical_crossentropy", optimizer = Adam(lr = learningRate), metrics = ['accuracy'])
+    model.summary()
+    keras.utils.plot_model(model, "../results/architecture.pdf", show_shapes = True)
     return model
 
 model = build_model()
-save_best_weights = 'question_pairs_weights_lr={}_dropout={}.h5'.format(learningRate, dropout)
-callbacks = [ModelCheckpoint(save_best_weights, monitor = 'val_loss', save_best_only = True), EarlyStopping(monitor = 'val_loss', patience = 5, verbose = 1, mode = 'auto'), ReduceLROnPlateau(monitor = 'val_loss', factor = 0.2, verbose = 1, patience = 3)]
-"""
-history = model.fit([x_train, x_train], y_train, batch_size = 64, epochs = 100, validation_split = 0.15, verbose = True, shuffle = True, callbacks = callbacks)
-#print(history.history.keys())
-plt.plot(np.sqrt(np.array(history.history["loss"])), label = "training crossentropy", linewidth = 0.5)
-plt.plot(np.sqrt(np.array(history.history["val_loss"])), label = "validation crossentropy", linewidth = 0.5)
-plt.plot(np.sqrt(np.array(history.history["acc"])), label = "training accuracy", linewidth = 0.5)
-plt.plot(np.sqrt(np.array(history.history["val_acc"])), label = "validation accuracy", linewidth = 0.5)
-plt.legend()
-plt.ylim(0., 1.)
-plt.xlabel("epoch")
-plt.tight_layout()
-plt.savefig("./learningCurve.pdf")
-plt.clf()
-"""
-print("Predicting ...")
-model.load_weights('./question_pairs_weights_lr={}_dropout={}.h5'.format(learningRate,dropout))
-y_pred = model.predict([x_test,x_test], verbose = True)
-"""
-print("true\tpred")
-for i in range(len(y_pred)):
-    print(str(y_test[i]) + "\t" + str(int(y_pred[i] > 0.5)))
-"""
 
-Input = ""
-with io.open("../middle-end/middleOut.txt", encoding = "utf-8") as f:
-    for line in f:
-        Input = u' '.join((Input, line))
-cleanInput = cleanText(Input)
-intInput = news2Int(cleanInput)
-padInput = padNews(intInput)
-padInput = np.array(padInput).reshape((1, -1))
-output = model.predict([padInput,padInput])
-if output[0] > 0.5:
-    print("the stock price will rise!")
-else:
-    print("the stock price will drop!")
+if sys.argv[-1] == "train":
+    print("Training ...")
+    checkpoint = ModelCheckpoint("question_pairs_weights_lr={}_dropout={}.h5".format(learningRate, dropout), save_best_only = True, verbose = 1, monitor = 'val_loss', mode = 'min')
+    history = model.fit(x_train, y_train, batch_size = 64, epochs = 100, validation_split = 0.1, verbose = True, shuffle = True, callbacks = [checkpoint, EarlyStopping(monitor = 'val_loss', patience = 8, verbose = 1, mode = 'min'), ReduceLROnPlateau(monitor = 'val_loss', factor = 0.2, verbose = 1, patience = 3)])
+    
+    print("Evaluating ...")
+    #print(history.history.keys())
+    plt.plot(np.sqrt(np.array(history.history["loss"])), label = "training crossentropy", linewidth = 0.5)
+    plt.plot(np.sqrt(np.array(history.history["val_loss"])), label = "validation crossentropy", linewidth = 0.5)
+    plt.legend()
+    plt.xlabel("epoch")
+    plt.ylabel("loss")
+    plt.yscale("log")
+    plt.tight_layout()
+    plt.savefig("../results/learningCurve.pdf")
+    plt.clf()
+    with open("../results/evaluation.txt", "w") as evl:
+        loss_train, acc_train = model.evaluate(x_train, y_train, batch_size = 1, verbose = 0)
+        loss_test, acc_test = model.evaluate(x_test, y_test, batch_size = 1, verbose = 0)
+        print("Training loss = {:.3f}, Training accuracy = {:.3f}".format(loss_train, acc_train), file = evl)
+        print("Testing loss = {:.3f}, Testing accuracy = {:.3f}".format(loss_test, acc_test), file = evl)
+        y_pred = model.predict(x_test).argmax(axis = 1)
+        print(classification_report(y_test, y_pred), file = evl)
+        print(confusion_matrix(y_test, y_pred), file = evl)
+
+if sys.argv[-1] == "pred":
+    print("Predicting ...")
+    model.load_weights('./question_pairs_weights_lr={}_dropout={}.h5'.format(learningRate,dropout))
+    Input = ""
+    with io.open("../middle-end/middleOut.txt", encoding = "utf-8") as f:
+        for line in f:
+            Input = u' '.join((Input, line))
+    cleanInput = cleanText(Input)
+    intInput = news2Int(cleanInput)
+    padInput = padNews(intInput)
+    padInput = np.array(padInput).reshape((1, -1))
+    output = model.predict([padInput,padInput])
+    if output[0] > 0.5:
+        print("the stock price will rise!")
+    else:
+        print("the stock price will drop!")
