@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import tensorflow as tf
+from datetime import date
 import re
 import keras
 import sys
@@ -242,33 +243,26 @@ for i in headlinesInt:
     else:
         dailyHeadlinesPad = dailyHeadlinesPad[:dailyLenThreshold]
     headlinesPad.append(dailyHeadlinesPad)
-x_train, x_test, y_train, y_test = train_test_split(headlinesPad, price, test_size = 0.01, random_state = 1)
+x_train, x_test, y_train, y_test = train_test_split(headlinesPad, price, test_size = 0.1, random_state = 1)
 x_train = np.array(x_train)
 x_test = np.array(x_test)
 y_train = np.array(y_train)
 y_test = np.array(y_test)
 
 print("Building ...")
-filterLen1 = 3
-filterLen2 = 5
-dropout = 0.1
-learningRate = 0.0001
-filterNum = 16
-rnnOutputDim = 128
-hiddenDim = 128
 
 def build_model():
     model = Sequential()
     model.add(Embedding(wordNum, embedDim, weights = [embedMatrix], input_length = dailyLenThreshold))
-    model.add(Dropout(dropout))
-    model.add(Convolution1D(filters = filterNum, kernel_size = filterLen2, padding = 'same', activation = 'relu'))
-    model.add(Dropout(dropout))
-    model.add(LSTM(rnnOutputDim, activation = None, kernel_initializer = initializers.TruncatedNormal(mean = 0.0, stddev = 0.1, seed = 1), dropout = dropout))
-    model.add(Dense(hiddenDim, kernel_initializer = initializers.TruncatedNormal(mean = 0.0, stddev = 0.1, seed = 1)))
-    model.add(Dropout(dropout))
-    model.add(Dense(2, kernel_initializer = initializers.TruncatedNormal(mean = 0.0, stddev = 0.1, seed = 1), activation = "softmax"))
-    model.compile(loss = "sparse_categorical_crossentropy", optimizer = Adam(lr = learningRate), metrics = ['accuracy'])
-    model.summary()
+    model.add(Dropout(0.1))
+    model.add(Convolution1D(16, kernel_size = 5, padding = 'same', activation = 'relu'))
+    model.add(Dropout(0.1))
+    model.add(LSTM(128, activation = None, kernel_initializer = keras.initializers.he_uniform(seed = 1), dropout = 0.1))
+    model.add(Dense(128, kernel_initializer = keras.initializers.he_uniform(seed = 1), activation = 'relu'))
+    model.add(Dropout(0.1))
+    model.add(Dense(2, kernel_initializer = keras.initializers.he_uniform(seed = 1), activation = "softmax"))
+    model.compile(loss = "sparse_categorical_crossentropy", optimizer = Adam(lr = 0.001), metrics = ['accuracy'])
+    #model.summary()
     keras.utils.plot_model(model, "../results/architecture.pdf", show_shapes = True)
     return model
 
@@ -276,8 +270,8 @@ model = build_model()
 
 if sys.argv[-1] == "train":
     print("Training ...")
-    checkpoint = ModelCheckpoint("question_pairs_weights_lr={}_dropout={}.h5".format(learningRate, dropout), save_best_only = True, verbose = 1, monitor = 'val_loss', mode = 'min')
-    history = model.fit(x_train, y_train, batch_size = 64, epochs = 100, validation_split = 0.1, verbose = True, shuffle = True, callbacks = [checkpoint, EarlyStopping(monitor = 'val_loss', patience = 8, verbose = 1, mode = 'min'), ReduceLROnPlateau(monitor = 'val_loss', factor = 0.2, verbose = 1, patience = 3)])
+    checkpoint = ModelCheckpoint("./weights.hdf5", save_best_only = True, verbose = 1, monitor = 'val_loss', mode = 'min')
+    history = model.fit(x_train, y_train, batch_size = 64, epochs = 100, validation_split = 0.1, verbose = True, shuffle = True, callbacks = [checkpoint, EarlyStopping(monitor = 'val_loss', patience = 5, verbose = 1, mode = 'min'), ReduceLROnPlateau(monitor = 'val_loss', factor = 0.2, verbose = 1, patience = 3)])
     
     print("Evaluating ...")
     #print(history.history.keys())
@@ -291,6 +285,7 @@ if sys.argv[-1] == "train":
     plt.savefig("../results/learningCurve.pdf")
     plt.clf()
     with open("../results/evaluation.txt", "w") as evl:
+        print("Train on {} events, Validate on {} events, Test on {} events".format(int(len(y_train) * 0.8), int(len(y_train) * 0.2), len(y_test)), file = evl)
         loss_train, acc_train = model.evaluate(x_train, y_train, batch_size = 1, verbose = 0)
         loss_test, acc_test = model.evaluate(x_test, y_test, batch_size = 1, verbose = 0)
         print("Training loss = {:.3f}, Training accuracy = {:.3f}".format(loss_train, acc_train), file = evl)
@@ -301,17 +296,20 @@ if sys.argv[-1] == "train":
 
 if sys.argv[-1] == "pred":
     print("Predicting ...")
-    model.load_weights('./question_pairs_weights_lr={}_dropout={}.h5'.format(learningRate,dropout))
+    model.load_weights("./weights.hdf5")
     Input = ""
     with io.open("../middle-end/middleOut.txt", encoding = "utf-8") as f:
+    #with io.open("./test.txt", encoding = "utf-8") as f:
         for line in f:
             Input = u' '.join((Input, line))
     cleanInput = cleanText(Input)
     intInput = news2Int(cleanInput)
     padInput = padNews(intInput)
     padInput = np.array(padInput).reshape((1, -1))
-    output = model.predict([padInput,padInput])
-    if output[0] > 0.5:
-        print("the stock price will rise!")
-    else:
-        print("the stock price will drop!")
+    output = model.predict([padInput, padInput])
+    with open("../results/prediction.txt", "w") as prediction:
+        print("Date: ", date.today(), file = prediction)
+        if output[0][1] > 0.5:
+            print("The stock price will rise!", file = prediction)
+        else:
+            print("The stock price will drop!", file = prediction)
