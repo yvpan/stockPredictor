@@ -18,6 +18,47 @@ from keras import regularizers
 import io
 from gensim.parsing.preprocessing import remove_stopwords
 
+def news2Int(news):
+    ints = []
+    for word in news.split():
+        if word in voc2Int:
+            ints.append(voc2Int[word])
+        else:
+            ints.append(voc2Int['<UNK>'])
+    return ints
+
+def padNews(news):
+    newsPad = news
+    if len(newsPad) < dailyLenThreshold:
+        for i in range(dailyLenThreshold - len(newsPad)):
+            newsPad.append(voc2Int["<PAD>"])
+    elif len(newsPad) > dailyLenThreshold:
+        newsPad = newsPad[:dailyLenThreshold]
+    return newsPad
+
+def cleanText(text):
+    text = text.lower()
+    text = text.split()
+    tmp = []
+    for i in text:
+        if i in contractions:
+            tmp.append(contractions[i])
+        else:
+            tmp.append(i)
+    text = " ".join(tmp)
+    text = re.sub(r'&amp;', '', text)
+    text = re.sub(r'b\'', '', text)
+    text = re.sub(r',0', '0', text)
+    text = re.sub(r'[_"\-;%()|.,+&=*%.,!?:#@\[\]]', ' ', text)
+    text = re.sub(r'\'', ' ', text)
+    text = re.sub(r'\$', ' $ ', text)
+    text = re.sub(r'u s ', ' united states ', text)
+    text = re.sub(r'u n ', ' united nations ', text)
+    text = re.sub(r'u k ', ' united kingdom ', text)
+    text = re.sub(r' s ', ' ', text)
+    text = re.sub(r' yr ', ' year ', text)
+    return remove_stopwords(text)
+
 print("Data cleaning ...")
 inFile = pd.read_csv("./Combined_News_DJIA.csv")
 price = []
@@ -105,28 +146,6 @@ contractions = {
 "you're": "you are"
 }
 
-def cleanText(text):
-    text = text.lower()
-    text = text.split()
-    tmp = []
-    for i in text:
-        if i in contractions:
-            tmp.append(contractions[i])
-        else:
-            tmp.append(i)
-    text = " ".join(tmp)
-    text = re.sub(r'&amp;', '', text) 
-    text = re.sub(r'b\'', '', text)
-    text = re.sub(r',0', '0', text) 
-    text = re.sub(r'[_"\-;%()|.,+&=*%.,!?:#@\[\]]', ' ', text)
-    text = re.sub(r'\'', ' ', text)
-    text = re.sub(r'\$', ' $ ', text)
-    text = re.sub(r'u s ', ' united states ', text)
-    text = re.sub(r'u n ', ' united nations ', text)
-    text = re.sub(r'u k ', ' united kingdom ', text)
-    text = re.sub(r' s ', ' ', text)
-    text = re.sub(r' yr ', ' year ', text)
-    return remove_stopwords(text)
 headlinesCleaned = []
 for i in headlines:
     headlineCleaned = []
@@ -282,26 +301,8 @@ for i in range(len(y_pred)):
     print(str(y_test[i]) + "\t" + str(int(y_pred[i] > 0.5)))
 """
 
-def news2Int(news):
-    ints = []
-    for word in news.split():
-        if word in voc2Int:
-            ints.append(voc2Int[word])
-        else:
-            ints.append(voc2Int['<UNK>'])
-    return ints
-
-def padNews(news):
-    newsPad = news
-    if len(newsPad) < dailyLenThreshold:
-        for i in range(dailyLenThreshold - len(newsPad)):
-            newsPad.append(voc2Int["<PAD>"])
-    elif len(newsPad) > dailyLenThreshold:
-        newsPad = newsPad[:dailyLenThreshold]
-    return newsPad
-
 Input = ""
-with io.open("./crawlNews.txt", encoding = "utf-8") as f:
+with io.open("../middle-end/middleOut.txt", encoding = "utf-8") as f:
     for line in f:
         Input = u' '.join((Input, line))
 cleanInput = cleanText(Input)
